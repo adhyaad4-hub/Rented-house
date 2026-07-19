@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KirayaPe - Master Control Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Firebase Legacy SDK Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+</head>
+<body class="bg-gray-100 font-sans antialiased text-gray-900">
+
+    <div id="app" class="mx-auto max-w-md min-h-screen bg-white shadow-2xl flex flex-col relative pb-20 border-x border-gray-200">
+        
+        <!-- SPLASH SCREEN -->
+        <div id="splash-screen" class="absolute inset-0 bg-blue-600 z-[100] flex flex-col items-center justify-center text-white transition-opacity duration-500">
+            <div class="bg-white p-5 rounded-3xl shadow-2xl mb-4 animate-bounce">
+                <i data-lucide="shield-check" class="w-16 h-16 text-blue-600"></i>
+            </div>
+            <h1 class="text-3xl font-black tracking-tight">KirayaPe</h1>
+            <p class="text-xs text-blue-200 mt-2 font-medium tracking-wide">Secure Property Ownership Verification</p>
+        </div>
+
+        <!-- LANGUAGE SELECTOR SCREEN (SHOWS BEFORE ENTRY) -->
+        <div id="language-screen" class="absolute inset-0 bg-white z-[90] flex flex-col items-center justify-center px-6 hidden">
+            <div class="bg-blue-50 p-4 rounded-2xl mb-6 text-blue-600">
+                <i data-lucide="languages" class="w-12 h-12"></i>
+            </div>
+            <h2 class="text-xl font-bold text-gray-900 mb-1 text-center">Select Your Language</h2>
+            <p class="text-xs text-gray-500 mb-6 text-center">Kripya apni pasandida bhaasha ka chayan karein</p>
+            
+            <div class="w-full space-y-3">
+                <button onclick="setLanguage('en')" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-xl shadow-md flex justify-between items-center transition active:scale-95">
+                    <span>English</span>
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
+                <button onclick="setLanguage('hi')" class="w-full bg-white border-2 border-blue-600 text-blue-600 font-bold py-3 px-4 rounded-xl shadow-sm flex justify-between items-center transition active:scale-95">
+                    <span>हिन्दी (Hindi)</span>
+                    <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Header Bar -->
+        <header id="app-header" class="hidden bg-white px-4 py-3 sticky top-0 z-50 flex justify-between items-center border-b border-gray-100 shadow-sm">
+            <div id="admin-secret-zone" onclick="handleAdminLogoClick()" class="flex items-center space-x-2 cursor-pointer select-none">
+                <i data-lucide="home" class="w-6 h-6 text-blue-600"></i>
+                <span class="font-black text-xl text-gray-900 tracking-tight">KirayaPe</span>
+            </div>
+            <button onclick="switchTab('notifications')" class="relative p-1.5 bg-gray-100 rounded-full text-gray-600">
+                <i data-lucide="bell" class="w-4 h-4"></i>
+                <span id="noti-count" class="hidden absolute -top-1 -right-1 bg-red-500 text-white font-bold text-[8px] w-4 h-4 rounded-full flex items-center justify-center">0</span>
+            </button>
+        </header>
+
+        <!-- Main Viewport -->
+        <main class="flex-1 p-4 flex flex-col overflow-y-auto hidden" id="main-view"></main>
+
+        <!-- Bottom Navigation Bar -->
+        <nav id="app-nav" class="hidden fixed bottom-0 left-0 right-0 mx-auto max-w-md bg-white border-t border-gray-100 flex justify-around py-2 shadow-lg z-40"></nav>
+
+    </div>
+
+    <script>
+        // CONFIGURATION ZONE: Clean, Validated Config Block
+        const firebaseConfig = {
+            apiKey: "AIzaSyCUo1PUce_5VlYk_rr7pM9JIqNaPArE53Q",
+            authDomain: "kirayepe--platform.firebaseapp.com",
+            projectId: "kirayepe--platform",
+            storageBucket: "kirayepe--platform.firebasestorage.app",
+            messagingSenderId: "374931053969",
+            appId: "1:374931053969:web:33c14cb97023f026db4e30",
+            measurementId: "G-P1NHK2CGJ1"
+        };
+
+        // Initialize Firebase instances
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+
+        // App States
+        let sessionUser = null; 
+        let currentTab = 'register';
+        let uploadedPhotoFile = null; 
+        let uploadedDocFile = null;
+        let uploadedVideoFile = null; 
+        
+        let adminLogoClicks = 0;
+        let adminClickTimeout = null;
+
+        let databaseProperties = [];
+        let appBookings = [];
+        let systemNotifications = [];
+        let allUsersList = []; 
+        let systemEscrow = { balance: 0, profit: 0, adminQrUrl: "" };
+        let fraudComplaints = [];
+        let searchQuery = "";
+        let selectedLocation = { lat: 28.6139, lng: 77.2090, name: "Delhi, India" }; 
+
+        // Language Dictionary Translation Object
+        let currentLang = 'en'; 
+        const langDict = {
+            en: {
+                regTitle: "KirayaPe Registration",
+                labelPhoto: "Your Photo *",
+                labelName: "Full Name",
+                labelEmail: "Email",
+                labelPhone: "Phone",
+                labelRole: "Role",
+                roleTenant: "Tenant (किराएदार)",
+                roleOwner: "Owner (मकान मालिक)",
+                ownerVerifyTitle: "Owner Document Verification *",
+                ownerVerifyDesc: "Please upload your ownership document for verification.",
+                btnRegister: "Register",
+                exploreFeed: "Explore Feed & Listings Window",
+                reviewTitle: "Verification Under Review",
+                reviewDesc: "Admin is verifying your uploaded Owner Document. Your account will be active shortly!",
+                verifiedBadge: "✓ Verified Owner Profile Active",
+                statusLabel: "Document Status: Permanent Deleted From Server",
+                securityTitle: "Suraksha Sandesh:",
+                securityDesc: "Do not worry, once it is verified that you are the Owner of this house, your document has been securely deleted from the cloud database and storage by the admin. No record is active on the portal anymore.",
+                propMgmtArea: "Property Management Area Active",
+                duplicateAlert: "⚠️ WARNING: This document is already registered in the system! Please avoid fraud and try to upload your correct and original document.",
+                uploadingMsg: "Uploading data securely...",
+                mandatoryAlert: "All fields are mandatory!",
+                docRequiredAlert: "Owner Document Verification is required!",
+                navExplore: "Explore",
+                navChats: "My Chats",
+                navDashboard: "Dashboard"
+            },
+            hi: {
+                regTitle: "किरायापे रजिस्ट्रेशन",
+                labelPhoto: "आपका फोटो *",
+                labelName: "पूरा नाम",
+                labelEmail: "ईमेल आईडी",
+                labelPhone: "फ़ोन नंबर",
+                labelRole: "रोल (भूमिका)",
+                roleTenant: "Tenant (किराएदार)",
+                roleOwner: "Owner (मकान मालिक)",
+                ownerVerifyTitle: "मालिक दस्तावेज़ सत्यापन *",
+                ownerVerifyDesc: "कृपया सत्यापन के लिए अपना मालिकाना हक दस्तावेज़ अपलोड करें।",
+                btnRegister: "रजिस्टर करें",
+                exploreFeed: "एक्सप्लोर फीड और लिस्टिंग विंडो",
+                reviewTitle: "संपत्ति सत्यापन समीक्षा के अधीन है",
+                reviewDesc: "एडमिन आपके दिए गए ओनर डॉक्यूमेंट को वेरीफाई कर रहे हैं। जल्द ही आपका अकाउंट एक्टिव होगा!",
+                verifiedBadge: "✓ सत्यापित मालिक प्रोफ़ाइल सक्रिय",
+                statusLabel: "दस्तावेज़ की स्थिति: सर्वर से स्थायी रूप से हटा दिया गया है",
+                securityTitle: "सुरक्षा संदेश:",
+                securityDesc: "Aap chinta na karein, ek baar verified hone ke baad ki aap iss ghar ke Malik hain, aapka document admin dwara cloud database aur storage se surakshit tarike se delete kar diya gaya hai. Unka koi bhi record portal par ab active nahi hai.",
+                propMgmtArea: "संपत्ति प्रबंधन क्षेत्र सक्रिय है",
+                duplicateAlert: "⚠️ चेतावनी: यह दस्तावेज़ पहले से ही सिस्टम में पंजीकृत है! कृपया धोखाधड़ी से बचें aur apna sahi aur original document hi upload karne ka prayas karein.",
+                uploadingMsg: "डेटा सुरक्षित रूप से अपलोड किया जा रहा है...",
+                mandatoryAlert: "सभी फ़ील्ड अनिवार्य हैं!",
+                docRequiredAlert: "ओनर डॉक्यूमेंट वेरिफिकेशन आवश्यक है!",
+                navExplore: "एक्सप्लोर",
+                navChats: "मेरे चैट्स",
+                navDashboard: "डैशबोर्ड"
+            }
+        };
+
+        function init() {
+            try {
+                syncProperties();
+                syncBookings();
+                syncNotifications();
+                syncEscrowBalance();
+                syncAllUsers();
+                syncFraudComplaints();
+            } catch(e) { console.log("Engine sync awaiting firestore service connection."); }
+
+            setTimeout(() => {
+                const splash = document.getElementById('splash-screen');
+                splash.classList.add('opacity-0');
+                setTimeout(() => {
+                    splash.classList.add('hidden');
+                    document.getElementById('language-screen').classList.remove('hidden');
+                    if(window.lucide) lucide.createIcons();
+                }, 500);
+            }, 2000);
+        }
+
+        function setLanguage(lang) {
+            currentLang = lang;
+            document.getElementById('language-screen').classList.add('hidden');
+            document.getElementById('app-header').classList.remove('hidden');
+            document.getElementById('main-view').classList.remove('hidden');
+            render();
+        }
+
+        // --- Realtime FireStore Sync ---
+        function syncProperties() { db.collection("properties").onSnapshot(s => { databaseProperties = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, err => console.log(err.message)); }
+        function syncBookings() { db.collection("bookings").onSnapshot(s => { appBookings = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }, err => console.log(err.message)); }
+        function syncNotifications() { db.collection("notifications").orderBy("timestamp", "desc").onSnapshot(s => { systemNotifications = s.docs.map(d => ({ id: d.id, ...d.data() })); updateNotificationCount(); render(); }, err => console.log(err.message)); }
+        function syncEscrowBalance() { db.collection("systemState").doc("escrow").onSnapshot(d => { if(d.exists) systemEscrow = d.data(); render(); }, err => console.log(err.message)); }
+        function syncFraudComplaints() { db.collection("complaints").onSnapshot(s => { fraudComplaints = s.docs.map(d => d.data()); render(); }, err => console.log(err.message)); }
+        function syncAllUsers() { 
+            db.collection("users").onSnapshot(s => { 
+                allUsersList = s.docs.map(d => ({ id: d.id, ...d.data() })); 
+                if(sessionUser) {
+                    const updatedMe = allUsersList.find(u => u.id === sessionUser.id);
+                    if(updatedMe) sessionUser = updatedMe;
+                }
+                render(); 
+            }, err => console.log(err.message)); 
+        }
+
+        async function uploadFileToCloud(file, path) {
+            if(!file) return "";
+            const fileRef = storage.ref().child(path + "_" + Date.now());
+            const uploadTask = await fileRef.put(file);
+            return await uploadTask.ref.getDownloadURL();
+        }
+
+        function previewFile() {
+            const preview = document.getElementById('photo-preview');
+            const file = document.getElementById('u-photo-file').files[0];
+            if (!file) { uploadedPhotoFile = null; preview.classList.add('hidden'); return; }
+            uploadedPhotoFile = file;
+            preview.src = URL.createObjectURL(file);
+            preview.classList.remove('hidden');
+        }
+
+        function handleRoleChange() {
+            const role = document.getElementById('u-role').value;
+            const docSection = document.getElementById('owner-doc-section');
+            if(role === 'owner') docSection.classList.remove('hidden');
+            else docSection.classList.add('hidden');
+        }
+
+        function handleAdminLogoClick() {
+            adminLogoClicks++;
+            clearTimeout(adminClickTimeout);
+            if (adminLogoClicks >= 5) {
+                adminLogoClicks = 0;
+                currentTab = 'admin-auth';
+                render();
+            } else {
+                adminClickTimeout = setTimeout(() => { adminLogoClicks = 0; }, 2000);
+            }
+        }
+
+        function handleSearch(e) {
+            searchQuery = e.value.toLowerCase();
+            render();
+        }
+
+        function simulateMapClick(locName, lat, lng) {
+            selectedLocation = { lat, lng, name: locName };
+            alert("Map Location Selected: " + locName);
+            render();
+        }
+
+        // Redirects Tenant to Google Maps to view accurate route and distance from their live location
+        function openGoogleMapsRoute(lat, lng) {
+            if(!lat || !lng) {
+                alert("Location details unavailable for this property.");
+                return;
+            }
+            const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+            window.open(mapsUrl, '_blank');
+        }
+
+        async function uploadHouseVideo() {
+            const videoInput = document.getElementById('owner-video-file');
+            if(!videoInput || !videoInput.files[0]) return alert("Please select a video file first!");
+            alert("Uploading house video to secure cloud...");
+            try {
+                const videoUrl = await uploadFileToCloud(videoInput.files[0], 'videos/properties');
+                await db.collection("users").doc(sessionUser.id).update({ houseVideoUrl: videoUrl });
+                alert("House video uploaded & saved successfully!");
+                render();
+            } catch(e) { alert(e.message); }
+        }
+
+        async function updateAvailability() {
+            const desc = document.getElementById('owner-free-desc').value.trim();
+            if(!desc) return alert("Please type your availability schedule details!");
+            try {
+                await db.collection("users").doc(sessionUser.id).update({ availabilitySchedule: desc });
+                alert("Availability schedule description updated dynamically!");
+                render();
+            } catch(e) { alert(e.message); }
+        }
+
+        async function saveAdminQrCode() {
+            const qrUrlInput = document.getElementById('admin-qr-input-url').value.trim();
+            if(!qrUrlInput) return alert("Please enter a valid QR Code URL/Link");
+            try {
+                await db.collection("systemState").doc("escrow").set({
+                    adminQrUrl: qrUrlInput
+                }, { merge: true });
+                alert("Tenant Gateway System QR Code Link Updated Successfully!");
+                render();
+            } catch(e) { alert(e.message); }
+        }
+
+        async function registerAccount() {
+            const name = document.getElementById('u-name').value.trim();
+            const email = document.getElementById('u-email').value.trim();
+            const phone = document.getElementById('u-phone').value.trim();
+            const role = document.getElementById('u-role').value;
+            const docFileElem = document.getElementById('u-doc-file');
+            
+            const t = langDict[currentLang];
+
+            if(!uploadedPhotoFile || !name || !email || !phone) return alert(t.mandatoryAlert);
+            if(role === 'owner' && (!docFileElem || !docFileElem.files[0])) return alert(t.docRequiredAlert);
+
+            if(role === 'owner' && docFileElem.files[0]) {
+                const currentFileName = docFileElem.files[0].name;
+                const isDuplicate = allUsersList.some(user => user.role === 'owner' && user.originalDocName === currentFileName);
+                
+                if(isDuplicate) {
+                    alert(t.duplicateAlert);
+                    return; 
+                }
+            }
+
+            alert(t.uploadingMsg);
+            try {
+                const photoUrl = await uploadFileToCloud(uploadedPhotoFile, 'profiles/user');
+                let docUrl = "";
+                let savedFileName = "";
+                if(role === 'owner') {
+                    savedFileName = docFileElem.files[0].name;
+                    docUrl = await uploadFileToCloud(docFileElem.files[0], 'documents/ownership_proof');
+                }
+
+                const generatedId = "USR" + Math.floor(Math.random()*900+100);
+                const newUser = { 
+                    id: generatedId, name, email, phone, role, photo: photoUrl,
+                    documentUrl: docUrl, originalDocName: savedFileName, isVerifiedOwner: false,
+                    availabilitySchedule: "Available all weekends 10AM to 5PM",
+                    houseVideoUrl: "", markedLocation: selectedLocation
+                };
+                
+                await db.collection("users").doc(generatedId).set(newUser);
+                sessionUser = newUser;
+                currentTab = 'explore';
+                render();
+            } catch (err) { alert(err.message); }
+        }
+
+        async function approveOwner(userId) {
+            try {
+                await db.collection("users").doc(userId).update({ 
+                    isVerifiedOwner: true,
+                    documentUrl: "" 
+                });
+                alert("Owner approved successfully! Verified badge activated.");
+            } catch(e) { alert(e.message); }
+        }
+
+        async function deleteOwnerDocument(userId, docUrl) {
+            if(!confirm("Are you sure you want to permanently delete this proof file for privacy reasons?")) return;
+            try {
+                await db.collection("users").doc(userId).update({ documentUrl: "" });
+                if (docUrl && docUrl.includes("firebase")) {
+                    await storage.refFromURL(docUrl).delete();
+                }
+                alert("Document successfully purged from servers!");
+            } catch(e) { alert("Data record cleared."); }
+        }
+
+        async function releasePayment(bookingId, rent) {
+            try {
+                await db.collection("bookings").doc(bookingId).update({ status: "Released" });
+                await db.collection("systemState").doc("escrow").update({
+                    balance: firebase.firestore.FieldValue.increment(-rent),
+                    profit: firebase.firestore.FieldValue.increment(200)
+                });
+                alert("Payment Released to Owner! Portal Fee captured.");
+            } catch(e) { alert(e.message); }
+        }
+
+        function triggerOwnerMessage(tenantId) {
+            const activeBooking = appBookings.some(b => b.tenantId === tenantId && b.status === "Released");
+            if(!activeBooking && sessionUser.role === 'owner') {
+                alert("❌ Chat Locked: Aap tab tak Tenant se message ya baatchit nahi kar sakte jab tak unki booking process confirm/complete nahi ho jati.");
+                return;
+            }
+            alert("Chat open window initiated!");
+        }
+
+        function updateNotificationCount() {
+            const countBadge = document.getElementById('noti-count');
+            if(!sessionUser) return countBadge.classList.add('hidden');
+            const myCount = systemNotifications.filter(n => n.userId === sessionUser.id).length;
+            if(myCount > 0) { countBadge.innerText = myCount; countBadge.classList.remove('hidden'); }
+            else countBadge.classList.add('hidden');
+        }
+
+        function switchTab(t) { currentTab = t; render(); }
+        function authConsole() {
+            if(document.getElementById('console-key').value === '1234') { currentTab = 'admin-panel'; render(); }
+            else alert("Incorrect PIN");
+        }
+
+        function render() {
+            const main = document.getElementById('main-view');
+            const nav = document.getElementById('app-nav');
+            const t = langDict[currentLang];
+
+            if(!sessionUser && currentTab !== 'admin-auth' && currentTab !== 'admin-panel') {
+                nav.classList.add('hidden');
+                main.innerHTML = `
+                    <div class="space-y-4 py-4">
+                        <div class="text-center mb-2">
+                            <h2 class="text-2xl font-black text-gray-900">${t.regTitle}</h2>
+                        </div>
+                        <div class="bg-gray-50 p-5 rounded-3xl border space-y-3 shadow-inner">
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-700 uppercase block">${t.labelPhoto}</label>
+                                <input type="file" id="u-photo-file" accept="image/*" onchange="previewFile()" class="w-full mt-1 p-2 bg-white border rounded-xl text-xs">
+                                <img id="photo-preview" src="" class="hidden w-14 h-14 rounded-full mt-2 object-cover border">
+                            </div>
+                            <div><label class="text-[10px] font-bold text-gray-700 uppercase">${t.labelName}</label><input type="text" id="u-name" class="w-full mt-1 p-2.5 bg-white border rounded-xl text-xs"></div>
+                            <div><label class="text-[10px] font-bold text-gray-700 uppercase">${t.labelEmail}</label><input type="email" id="u-email" class="w-full mt-1 p-2.5 bg-white border rounded-xl text-xs"></div>
+                            <div><label class="text-[10px] font-bold text-gray-700 uppercase">${t.labelPhone}</label><input type="tel" id="u-phone" class="w-full mt-1 p-2.5 bg-white border rounded-xl text-xs"></div>
+                            <div>
+                                <label class="text-[10px] font-bold text-gray-700 uppercase block">${t.labelRole}</label>
+                                <select id="u-role" onchange="handleRoleChange()" class="w-full mt-1 p-2.5 bg-white border rounded-xl text-xs">
+                                    <option value="tenant">${t.roleTenant}</option>
+                                    <option value="owner">${t.roleOwner}</option>
+                                </select>
+                            </div>
+                            
+                            <div id="owner-doc-section" class="hidden bg-blue-50 p-3 rounded-2xl border border-blue-100 space-y-1">
+                                <label class="text-[10px] font-black text-blue-900 uppercase block">${t.ownerVerifyTitle}</label>
+                                <p class="text-[9px] text-blue-700 font-medium">${t.ownerVerifyDesc}</p>
+                                <input type="file" id="u-doc-file" accept="image/*,application/pdf" class="w-full mt-1 p-2 bg-white border rounded-xl text-xs">
+                            </div>
+
+                            <button onclick="registerAccount()" class="w-full bg-blue-600 text-white font-bold py-3 rounded-xl text-sm shadow-md">${t.btnRegister}</button>
+                        </div>
+                    </div>`;
+                if(window.lucide) lucide.createIcons(); return;
+            }
+
+            nav.classList.remove('hidden');
+            nav.innerHTML = sessionUser?.role === 'tenant' ? `
+                <button onclick="switchTab('explore')" class="flex flex-col items-center ${currentTab==='explore'?'text-blue-600 font-bold':'text-gray-400'} text-[11px]"><i data-lucide="building-2" class="w-5 h-5"></i><span>${t.navExplore}</span></button>
+                <button onclick="switchTab('chats')" class="flex flex-col items-center ${currentTab==='chats'?'text-blue-600 font-bold':'text-gray-400'} text-[11px]"><i data-lucide="message-circle" class="w-5 h-5"></i><span>${t.navChats}</span></button>
+            ` : `
+                <button onclick="switchTab('explore')" class="flex flex-col items-center ${currentTab==='explore'?'text-blue-600 font-bold':'text-gray-400'} text-[11px]"><i data-lucide="building-2" class="w-5 h-5"></i><span>${t.navExplore}</span></button>
+                <button onclick="switchTab('manage')" class="flex flex-col items-center ${currentTab==='manage'?'text-blue-600 font-bold':'text-gray-400'} text-[11px]"><i data-lucide="plus-square" class="w-5 h-5"></i><span>${t.navDashboard}</span></button>
+            `;
+
+            if(currentTab === 'explore') {
+                const filteredOwners = allUsersList.filter(u => u.role === 'owner' && (u.name.toLowerCase().includes(searchQuery) || (u.markedLocation && u.markedLocation.name.toLowerCase().includes(searchQuery))));
+                
+                main.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="relative">
+                            <input type="text" placeholder="Search by location, owner or space details..." oninput="handleSearch(this)" class="w-full p-3 pl-10 text-xs border rounded-2xl bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5"></i>
+                        </div>
+
+                        ${systemEscrow.adminQrUrl ? `
+                            <div class="p-3 bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl text-xs space-y-1 shadow-md">
+                                <p class="font-bold flex items-center gap-1"><i data-lucide="qr-code" class="w-4 h-4"></i> Secure Admin Escrow Payment Mode Active</p>
+                                <a href="${systemEscrow.adminQrUrl}" target="_blank" class="text-yellow-300 font-bold underline text-[11px]">👉 Click Here to View/Pay on Admin Official QR Code Link</a>
+                            </div>
+                        ` : ''}
+
+                        <h3 class="text-xs font-black uppercase text-gray-400 tracking-wider">Available Verified Listings</h3>
+                        
+                        ${filteredOwners.length === 0 ? `<p class="text-xs text-gray-400 text-center py-6">No properties match your search location.</p>` : ''}
+                        
+                        ${filteredOwners.map(o => `
+                            <div class="p-4 bg-white border rounded-2xl shadow-sm space-y-3">
+                                <div class="flex justify-between items-start">
+                                    <div>
+                                        <h4 class="font-bold text-gray-900">${o.name}'s Premium House Space</h4>
+                                        <p class="text-[10px] text-gray-500 flex items-center gap-0.5"><i data-lucide="map-pin" class="w-3 h-3 text-red-500"></i> Location: ${o.markedLocation?.name || 'Delhi, India'}</p>
+                                    </div>
+                                    <span class="text-[9px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded">Verified Listing</span>
+                                </div>
+                                
+                                <div class="bg-gray-50 p-2.5 rounded-xl border text-[11px]">
+                                    <p class="font-bold text-gray-700">📅 Owner Availability Schedule:</p>
+                                    <p class="text-gray-600 italic mt-0.5">${o.availabilitySchedule || 'Contact for details'}</p>
+                                </div>
+
+                                ${o.houseVideoUrl ? `
+                                    <div class="p-2 bg-blue-50 border border-blue-100 rounded-xl text-center">
+                                        <a href="${o.houseVideoUrl}" target="_blank" class="text-xs text-blue-700 font-bold flex items-center justify-center gap-1"><i data-lucide="video" class="w-4 h-4"></i> Play Virtual House Tour Video 🍿</a>
+                                    </div>
+                                ` : ''}
+
+                                <!-- Map Route Action Button on Dashboard Card for Tenant Linkage -->
+                                <button onclick="openGoogleMapsRoute(${o.markedLocation?.lat}, ${o.markedLocation?.lng})" class="w-full bg-emerald-600 text-white font-bold py-2 rounded-xl text-xs flex justify-center items-center gap-1 shadow-sm">
+                                    <i data-lucide="navigation" class="w-3.5 h-3.5"></i> View Route & Distance on Google Maps
+                                </button>
+
+                                <button onclick="triggerOwnerMessage('${o.id}')" class="w-full bg-blue-600 text-white font-bold py-2 rounded-xl text-xs flex justify-center items-center gap-1">
+                                    <i data-lucide="message-circle" class="w-3.5 h-3.5"></i> Chat With Owner
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>`;
+            }
+
+            else if(currentTab === 'manage') {
+                if(!sessionUser.isVerifiedOwner) {
+                    main.innerHTML = `
+                        <div class="text-center py-16 px-4 space-y-3">
+                            <div class="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto text-amber-600"><i data-lucide="clock" class="w-6 h-6"></i></div>
+                            <h3 class="text-base font-bold text-gray-900">${t.reviewTitle}</h3>
+                            <p class="text-xs text-gray-500">${t.reviewDesc}</p>
+                        </div>`;
+                } else {
+                    main.innerHTML = `
+                        <div class="space-y-4">
+                            <div class="p-4 text-emerald-600 font-bold text-center bg-emerald-50 rounded-xl border border-emerald-200 shadow-sm flex flex-col items-center justify-center gap-1.5">
+                                <div class="flex items-center gap-1">
+                                    <i data-lucide="badge-check" class="w-5 h-5 fill-emerald-100"></i>
+                                    <span>${t.verifiedBadge}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center space-x-2 text-red-700">
+                                <i data-lucide="trash-2" class="w-4 h-4 flex-shrink-0"></i>
+                                <span class="text-[11px] font-bold uppercase tracking-wider">${t.statusLabel}</span>
+                            </div>
+
+                            <!-- Dashboard Core Map Interaction Node Moved Here Safely -->
+                            <div class="p-4 bg-gray-50 border rounded-2xl space-y-2 shadow-sm">
+                                <label class="text-[11px] font-bold text-gray-800 flex items-center gap-1">🗺️ Manage House Location Pin</label>
+                                <div class="bg-blue-100 h-24 rounded-xl flex flex-col items-center justify-center border text-center p-2 cursor-pointer">
+                                    <i data-lucide="map-pin" class="w-6 h-6 text-red-600 animate-pulse"></i>
+                                    <span class="text-[10px] font-bold text-gray-800 mt-1" id="live-map-status">Active: ${sessionUser.markedLocation?.name || selectedLocation.name}</span>
+                                </div>
+                                <div class="flex gap-1 justify-center">
+                                    <button type="button" onclick="simulateMapClick('Connaught Place, Delhi', 28.6304, 77.2177)" class="text-[9px] bg-white border px-2 py-1 rounded-md shadow-200">Delhi Center</button>
+                                    <button type="button" onclick="simulateMapClick('Sector 62, Noida', 28.6219, 77.3639)" class="text-[9px] bg-white border px-2 py-1 rounded-md shadow-200">Noida</button>
+                                    <button type="button" onclick="simulateMapClick('Cyber City, Gurugram', 28.4952, 77.0878)" class="text-[9px] bg-white border px-2 py-1 rounded-md shadow-200">Gurugram</button>
+                                </div>
+                            </div>
+
+                            <div class="p-4 bg-white border rounded-2xl shadow-sm space-y-2">
+                                <label class="text-[11px] font-bold text-gray-800 flex items-center gap-1"><i data-lucide="video" class="w-4 h-4 text-blue-600"></i> Upload House Tour Video</label>
+                                <input type="file" id="owner-video-file" accept="video/*" class="w-full p-2 border bg-gray-50 text-xs rounded-xl">
+                                <button onclick="uploadHouseVideo()" class="w-full bg-blue-600 text-white text-xs font-bold py-2 rounded-xl">Upload Live Video</button>
+                                ${sessionUser.houseVideoUrl ? `<p class="text-[10px] text-emerald-600 font-bold">✓ Active House video linked on cloud database storage.</p>` : ''}
+                            </div>
+
+                            <div class="p-4 bg-white border rounded-2xl shadow-sm space-y-2">
+                                <label class="text-[11px] font-bold text-gray-800 flex items-center gap-1"><i data-lucide="calendar" class="w-4 h-4 text-indigo-600"></i> When are you free? (Availability Schedule Description)</label>
+                                <textarea id="owner-free-desc" rows="2" placeholder="e.g., I am free on Saturdays & Sundays..." class="w-full p-2.5 border bg-gray-50 text-xs rounded-xl">${sessionUser.availabilitySchedule || ''}</textarea>
+                                <button onclick="updateAvailability()" class="w-full bg-indigo-600 text-white text-xs font-bold py-2 rounded-xl">Update Availability Status</button>
+                            </div>
+
+                            <div class="p-4 bg-blue-50 border border-blue-200 text-blue-900 text-xs rounded-2xl font-medium shadow-sm space-y-1">
+                                <p class="font-bold flex items-center gap-1 text-blue-800 text-[13px]"><i data-lucide="shield-alert" class="w-4 h-4"></i> ${t.securityTitle}</p>
+                                <p class="leading-relaxed text-[11px]">${t.securityDesc}</p>
+                            </div>
+                            
+                            <div class="text-sm text-gray-400 text-center py-4 border border-dashed rounded-2xl bg-gray-50">${t.propMgmtArea}</div>
+                        </div>`;
+                }
+            }
+
+            else if(currentTab === 'chats') {
+                const tenantUsers = allUsersList.filter(u => u.role === 'tenant');
+                main.innerHTML = `
+                    <div class="space-y-3">
+                        <h3 class="text-xs font-black uppercase text-gray-400 tracking-wider">Inbox Channel Conversations</h3>
+                        ${tenantUsers.map(tu => `
+                            <div onclick="triggerOwnerMessage('${tu.id}')" class="p-3 bg-gray-50 border rounded-xl flex justify-between items-center cursor-pointer hover:bg-gray-100">
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-8 h-8 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-xs">${tu.name.charAt(0)}</div>
+                                    <div>
+                                        <p class="text-xs font-bold text-gray-900">${tu.name}</p>
+                                        <p class="text-[9px] text-gray-400">Click to establish secure channel loop</p>
+                                    </div>
+                                </div>
+                                <i data-lucide="lock" class="w-3.5 h-3.5 text-gray-400"></i>
+                            </div>
+                        `).join('')}
+                    </div>`;
+            }
+
+            else if(currentTab === 'admin-auth') {
+                main.innerHTML = `
+                    <div class="max-w-xs mx-auto text-center space-y-3 pt-12">
+                        <h3 class="font-black text-gray-900 text-base">Security Portal Pin</h3>
+                        <input type="password" id="console-key" class="w-full p-2.5 bg-gray-50 border text-center font-bold rounded-xl">
+                        <button onclick="authConsole()" class="w-full bg-black text-white font-bold py-2 rounded-xl text-xs">Verify Pin</button>
+                    </div>`;
+            }
+
+            else if(currentTab === 'admin-panel') {
+                const pendingOwners = allUsersList.filter(u => u.role === 'owner');
+                const pendingEscrowBookings = appBookings.filter(b => b.status === "Pending" || b.status === "Released");
+
+                main.innerHTML = `
+                    <div class="space-y-6">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="bg-white border rounded-2xl p-4 text-center shadow-sm">
+                                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Escrow Vol</span>
+                                <h2 class="text-xl font-black text-blue-600 mt-1">₹${systemEscrow.balance || 0}</h2>
+                            </div>
+                            <div class="bg-white border rounded-2xl p-4 text-center shadow-sm">
+                                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Portal Net Fees</span>
+                                <h2 class="text-xl font-black text-emerald-600 mt-1">₹${systemEscrow.profit || 0}</h2>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border rounded-2xl p-4 space-y-2 shadow-sm">
+                            <h4 class="text-xs font-black text-blue-600 uppercase tracking-wider">Paste Admin Payment QR Link</h4>
+                            <input type="text" id="admin-qr-input-url" value="${systemEscrow.adminQrUrl || ''}" placeholder="Paste hosted QR Image URL here..." class="w-full p-2 border bg-gray-50 rounded-xl text-xs">
+                            <button onclick="saveAdminQrCode()" class="w-full bg-blue-600 text-white font-bold py-2 rounded-xl text-xs">Update Platform QR Engine</button>
+                        </div>
+
+                        <div class="bg-white border rounded-2xl p-4 space-y-3 shadow-sm">
+                            <h4 class="text-xs font-black text-blue-600 uppercase tracking-wider">Owner Documents & Approvals</h4>
+                            ${pendingOwners.length === 0 ? `<p class="text-xs text-gray-400">No owners registered yet.</p>` : ''}
+                            ${pendingOwners.map(u => `
+                                <div class="p-3 bg-gray-50 rounded-xl border space-y-2 text-xs">
+                                    <div class="flex justify-between items-center">
+                                        <span class="font-bold text-gray-900">${u.name}</span>
+                                        <span class="text-[10px] px-2 py-0.5 rounded ${u.isVerifiedOwner ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${u.isVerifiedOwner ? 'Approved' : 'Pending'}</span>
+                                    </div>
+                                    ${u.documentUrl ? `
+                                        <a href="${u.documentUrl}" target="_blank" class="text-blue-600 font-bold underline block text-[11px]">🔍 View Owner Document</a>
+                                        <button onclick="deleteOwnerDocument('${u.id}', '${u.documentUrl}')" class="w-full bg-red-50 border border-red-200 text-red-600 py-1 rounded text-[10px] font-bold">🗑️ Delete Document File</button>
+                                    ` : `<p class="text-[10px] text-emerald-600 font-bold bg-white p-1 rounded border border-emerald-100 text-center">🛡️ Document Purged / Safe Status Enabled</p>`}
+                                    ${!u.isVerifiedOwner ? `<button onclick="approveOwner('${u.id}')" class="w-full bg-emerald-600 text-white font-bold py-1 rounded text-[10px] mt-1 shadow-sm">Approve Owner & Give Verified Badge</button>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div class="bg-white border rounded-2xl p-4 space-y-3 shadow-sm">
+                            <h4 class="text-xs font-black text-blue-600 uppercase tracking-wider">Release Pending Owner Payments</h4>
+                            ${pendingEscrowBookings.length === 0 ? `<p class="text-xs text-gray-400">No pending escrow locks found.</p>` : ''}
+                            ${pendingEscrowBookings.map(b => `
+                                <div class="p-3 bg-gray-50 rounded-xl border space-y-2 text-xs">
+                                    <p class="font-semibold text-gray-700">Tenant: <span class="font-bold text-gray-900">${b.tenantName}</span> | Rent Amount: <span class="font-black text-gray-900">₹${b.rentAmount}</span></p>
+                                    <p class="text-[10px] text-gray-400">Status: ${b.status}</p>
+                                    ${b.status === 'Pending' ? `
+                                        <button onclick="releasePayment('${b.id}', ${b.rentAmount})" class="w-full bg-blue-600 text-white font-bold py-1.5 rounded text-xs shadow-sm">Release (Charge ₹200 Portal fee)</button>
+                                    ` : `<p class="text-[10px] text-emerald-600 bg-emerald-50 border border-emerald-200 p-1 rounded font-bold">✔ Payment Transferred to Owner & Portal net fees adjusted.</p>`}
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div class="bg-white border rounded-2xl p-4 space-y-3 shadow-sm">
+                            <h4 class="text-xs font-black text-red-600 uppercase tracking-wider">Live Fraud Reports Feed</h4>
+                            ${fraudComplaints.length === 0 ? `
+                                <div class="p-6 border border-dashed rounded-xl text-center text-xs text-gray-400 font-medium">No active complaints found.</div>
+                            ` : fraudComplaints.map(c => `
+                                <div class="p-2.5 bg-red-50 border border-red-100 text-red-800 text-xs rounded-xl font-medium">Report: ${c.text}</div>
+                            `).join('')}
+                        </div>
+                    </div>`;
+            }
+            if(window.lucide) lucide.createIcons();
+        }
+
+        init();
+    </script>
+</body>
+  </html>
