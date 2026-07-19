@@ -215,10 +215,13 @@
             return await uploadTask.ref.getDownloadURL();
         }
 
-        function previewFile() {
-            const preview = document.getElementById('photo-preview');
-            const file = document.getElementById('u-photo-file').files[0];
-            if (!file) { uploadedPhotoFile = null; preview.classList.add('hidden'); return; }
+        function previewFile() 
+    const preview = document.getElementById('photo-preview');
+    const fileInput = document.getElementById('u-photo-file');
+    if (!fileInput || !fileInput.files[0]) { uploadedPhotoFile = null; preview.classList.add('hidden'); return; }
+    uploadedPhotoFile = fileInput.files[0]; // Yeh line file ko bind karegi
+    preview.src = URL.createObjectURL(uploadedPhotoFile);
+    preview.classList.remove('hidden');
             uploadedPhotoFile = file;
             preview.src = URL.createObjectURL(file);
             preview.classList.remove('hidden');
