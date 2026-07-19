@@ -213,20 +213,14 @@
             const fileRef = storage.ref().child(path + "_" + Date.now());
             const uploadTask = await fileRef.put(file);
             return await uploadTask.ref.getDownloadURL();
-        }
-
-        function previewFile() 
+function previewFile() {
     const preview = document.getElementById('photo-preview');
     const fileInput = document.getElementById('u-photo-file');
     if (!fileInput || !fileInput.files[0]) { uploadedPhotoFile = null; preview.classList.add('hidden'); return; }
     uploadedPhotoFile = fileInput.files[0]; // Yeh line file ko bind karegi
     preview.src = URL.createObjectURL(uploadedPhotoFile);
     preview.classList.remove('hidden');
-            uploadedPhotoFile = file;
-            preview.src = URL.createObjectURL(file);
-            preview.classList.remove('hidden');
-        }
-
+}
         function handleRoleChange() {
             const role = document.getElementById('u-role').value;
             const docSection = document.getElementById('owner-doc-section');
@@ -299,30 +293,58 @@
                 alert("Tenant Gateway System QR Code Link Updated Successfully!");
                 render();
             } catch(e) { alert(e.message); }
+        async function registerAccount() {
+    const name = document.getElementById('u-name').value.trim();
+    const email = document.getElementById('u-email').value.trim();
+    const phone = document.getElementById('u-phone').value.trim();
+    const role = document.getElementById('u-role').value;
+    const docFileElem = document.getElementById('u-doc-file');
+    
+    const t = langDict[currentLang];
+
+    // Photo check ko optional kar diya taaki submit na atke
+    if(!name || !email || !phone) return alert(t.mandatoryAlert);
+    if(role === 'owner' && (!docFileElem || !docFileElem.files[0])) return alert(t.docRequiredAlert);
+
+    if(role === 'owner' && docFileElem.files[0]) {
+        const currentFileName = docFileElem.files[0].name;
+        const isDuplicate = allUsersList.some(user => user.role === 'owner' && user.originalDocName === currentFileName);
+        
+        if(isDuplicate) {
+            alert(t.duplicateAlert);
+            return; 
+        }
+    }
+
+    alert(t.uploadingMsg);
+    try {
+        // Agar photo select ki hai toh upload hogi, warna blank text jayega
+        let photoUrl = "";
+        if (uploadedPhotoFile) {
+            photoUrl = await uploadFileToCloud(uploadedPhotoFile, 'profiles/user');
+        }
+        
+        let docUrl = "";
+        let savedFileName = "";
+        if(role === 'owner') {
+            savedFileName = docFileElem.files[0].name;
+            docUrl = await uploadFileToCloud(docFileElem.files[0], 'documents/ownership_proof');
         }
 
-        async function registerAccount() {
-            const name = document.getElementById('u-name').value.trim();
-            const email = document.getElementById('u-email').value.trim();
-            const phone = document.getElementById('u-phone').value.trim();
-            const role = document.getElementById('u-role').value;
-            const docFileElem = document.getElementById('u-doc-file');
-            
-            const t = langDict[currentLang];
-
-            if(!uploadedPhotoFile || !name || !email || !phone) return alert(t.mandatoryAlert);
-            if(role === 'owner' && (!docFileElem || !docFileElem.files[0])) return alert(t.docRequiredAlert);
-
-            if(role === 'owner' && docFileElem.files[0]) {
-                const currentFileName = docFileElem.files[0].name;
-                const isDuplicate = allUsersList.some(user => user.role === 'owner' && user.originalDocName === currentFileName);
-                
-                if(isDuplicate) {
-                    alert(t.duplicateAlert);
-                    return; 
-                }
-            }
-
+        const generatedId = "USR" + Math.floor(Math.random()*900+100);
+        const newUser = { 
+            id: generatedId, name, email, phone, role, photo: photoUrl,
+            documentUrl: docUrl, originalDocName: savedFileName, isVerifiedOwner: false,
+            availabilitySchedule: "Available all weekends 10AM to 5PM",
+            houseVideoUrl: "", markedLocation: selectedLocation
+        };
+        
+        await db.collection("users").doc(generatedId).set(newUser);
+        sessionUser = newUser;
+        currentTab = 'explore';
+        render();
+    } catch (err) { alert(err.message); }
+        }
             alert(t.uploadingMsg);
             try {
                 const photoUrl = await uploadFileToCloud(uploadedPhotoFile, 'profiles/user');
